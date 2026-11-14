@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package protocol is Lanternfolk's public, versioned wire contract between
 // clients and lanternfolkd. It is the only package outside internal/, and it
 // imports only the standard library (enforced by internal/archtest).

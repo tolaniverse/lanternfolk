@@ -104,3 +104,7 @@ Settings › Secrets and variables › Actions:
 
 See Asuka's [Shipping guide](https://asuka.egoist.dev/docs/shipping) for how to
 make each one.
+
+## License
+
+AGPL-3.0-only, except `protocol/`, which is Apache-2.0. See [LICENSING.md](LICENSING.md).
