@@ -1,0 +1,74 @@
+# Release pipeline: `go run ./dev snapshot` locally, `go run ./dev release` in CI on a v* tag.
+# The desktop app is packaged separately by `asuka build` (see .github/workflows/release.yml).
+version: 2
+
+project_name: lanternfolk
+
+before:
+  hooks:
+    - go mod verify
+
+builds:
+  - &cli
+    id: lanternfolkd
+    main: ./cmd/lanternfolkd
+    binary: lanternfolkd
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    ldflags:
+      - -s -w
+      - -X github.com/tolaniverse/lanternfolk/internal/buildinfo.Version={{ .Version }}
+      - -X github.com/tolaniverse/lanternfolk/internal/buildinfo.Commit={{ .FullCommit }}
+      - -X github.com/tolaniverse/lanternfolk/internal/buildinfo.Date={{ .CommitDate }}
+  - <<: *cli
+    id: lanternfolk-tui
+    main: ./cmd/lanternfolk-tui
+    binary: lanternfolk-tui
+
+archives:
+  - id: lanternfolkd
+    ids: [lanternfolkd]
+    name_template: "lanternfolkd_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+  - id: lanternfolk-tui
+    ids: [lanternfolk-tui]
+    name_template: "lanternfolk-tui_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: checksums.txt
+
+# Container image for lanternfolkd, built by ko: no Dockerfile, static
+# distroless base, multi-arch. Pushed to GHCR on release only.
+kos:
+  - id: lanternfolkd
+    build: lanternfolkd
+    main: ./cmd/lanternfolkd
+    base_image: cgr.dev/chainguard/static:latest
+    repositories: [ghcr.io/tolaniverse/lanternfolk]
+    bare: true
+    tags: ["{{ .Version }}", latest]
+    platforms: [linux/amd64, linux/arm64]
+    sbom: spdx
+    labels:
+      org.opencontainers.image.source: https://github.com/tolaniverse/lanternfolk
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude: ["^docs:", "^test:", "^chore\\(deps\\):"]
+
+release:
+  prerelease: auto

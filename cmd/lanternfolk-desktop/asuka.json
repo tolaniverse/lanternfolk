@@ -1,0 +1,7 @@
+{
+  "name": "Lanternfolk",
+  "id": "com.tolaniverse.lanternfolk",
+  "version": "0.1",
+  "build": 1,
+  "orientations": ["portrait", "landscape"]
+}

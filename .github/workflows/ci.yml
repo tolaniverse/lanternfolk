@@ -1,0 +1,85 @@
+# Every step is `go run ./dev <task>`, so CI runs exactly what developers run.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # fmt, vet, staticcheck (3 OSes), tests with -race, CGO_ENABLED=0 builds for
+  # 6 targets, govulncheck, and the architecture test.
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod # honours the toolchain line
+      - uses: actions/cache@v6
+        with:
+          path: bin/tools
+          key: tools-${{ runner.os }}-${{ hashFiles('tools/go.sum') }}
+      - run: go run ./dev ci
+
+  # Tests on the other desktop OSes (the TUI and desktop clients run there).
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: go run ./dev vet
+      - run: go run ./dev test
+
+  # Proves the release config still works, without publishing anything.
+  release-dry-run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # goreleaser reads tags and history
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: actions/cache@v6
+        with:
+          path: bin/tools
+          key: tools-${{ runner.os }}-${{ hashFiles('tools/go.sum') }}
+      - run: go run ./dev snapshot
+
+  # Desktop packages for every OS, built on a Mac (asuka builds macOS apps
+  # only on a Mac; Windows and Linux cross-build). Main branch only:
+  # macOS runners are the expensive ones.
+  desktop:
+    if: github.event_name == 'push'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: actions/cache@v6
+        with:
+          path: bin/tools
+          key: tools-${{ runner.os }}-${{ hashFiles('tools/go.sum') }}
+      - run: go run ./dev desktop-dist
+        env:
+          VERSION: 0.0.0-main.${{ github.run_number }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: lanternfolk-desktop
+          path: dist/desktop/*
+          retention-days: 14
