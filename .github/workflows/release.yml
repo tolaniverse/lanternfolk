@@ -1,7 +1,13 @@
-# Push a tag like v0.1.0 to release:
-#   - lanternfolkd and lanternfolk-tui archives for 6 OS/arch targets, plus checksums
-#   - a multi-arch lanternfolkd image (ko) at ghcr.io/tolaniverse/lanternfolk
-#   - desktop packages for macOS, Windows, and Linux, attached to the same release
+# Push a tag like v0.1.0 to release. goreleaser makes a *draft* GitHub release
+# with the CLI archives, and pushes the lanternfolkd image (ko) to
+# ghcr.io/tolaniverse/lanternfolk. The app jobs attach their builds to the
+# draft, and `publish` makes it public once every one of them has succeeded.
+# This is Asuka's pattern, so installed desktop apps (which read the latest
+# published release once updates are on) never see a half-uploaded one.
+#
+# Signing is optional. Each step signs when its secrets are present and
+# builds unsigned otherwise. The store uploads (TestFlight, Google Play) run
+# only when the repository variable MOBILE_RELEASE is "true".
 name: Release
 
 on:
@@ -25,7 +31,7 @@ jobs:
     needs: check
     runs-on: ubuntu-latest
     permissions:
-      contents: write # create the GitHub release
+      contents: write # create the draft release
       packages: write # push the image to GHCR
     steps:
       - uses: actions/checkout@v7
@@ -43,19 +49,157 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  desktop:
+  # Windows (x64, Arm) and Linux (amd64, arm64) desktop builds, and the web
+  # build, from one Linux runner.
+  app-desktop-web:
     needs: release
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     permissions:
-      contents: write # upload assets to the release
+      contents: write
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - run: go run ./dev desktop-dist
+      - name: Windows code signing (when WINDOWS_CERTIFICATE is set)
+        env:
+          CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+        run: |
+          if [ -n "$CERTIFICATE" ]; then
+            sudo apt-get install -y osslsigncode
+            echo "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.pfx"
+            echo "ASUKA_WINDOWS_CERT=$RUNNER_TEMP/cert.pfx" >> "$GITHUB_ENV"
+          fi
+      - run: go run ./dev desktop-dist -platforms windows,linux
         env:
           VERSION: ${{ github.ref_name }}
+          ASUKA_WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+      - name: web
+        run: |
+          go run ./dev asuka build -p web --version "${GITHUB_REF_NAME#v}" -o "$PWD/dist/web"
+          tar -C dist/web -czf "dist/desktop/lanternfolk-app_${GITHUB_REF_NAME#v}_web.tar.gz" .
       - run: gh release upload "$GITHUB_REF_NAME" dist/desktop/* --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # The Mac app: signed and notarized when the Developer ID secrets are set.
+  app-mac:
+    needs: release
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Developer ID certificate (when MAC_CERTIFICATE is set)
+        env:
+          CERTIFICATE: ${{ secrets.MAC_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+          IDENTITY: ${{ vars.MAC_SIGN_IDENTITY }}
+        run: |
+          [ -n "$CERTIFICATE" ] || exit 0
+          KC=$RUNNER_TEMP/signing.keychain-db
+          PW=$(openssl rand -hex 16)
+          security create-keychain -p "$PW" "$KC"
+          security set-keychain-settings -lut 3600 "$KC"
+          security unlock-keychain -p "$PW" "$KC"
+          echo "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$KC" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -k "$PW" "$KC"
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          echo "MAC_SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+      - run: go run ./dev desktop-dist -platforms mac
+        env:
+          VERSION: ${{ github.ref_name }}
+          ASUKA_APPLE_ID: ${{ secrets.APPLE_ID }}
+          ASUKA_APPLE_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          ASUKA_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - run: gh release upload "$GITHUB_REF_NAME" dist/desktop/* --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # iOS → TestFlight. Needs an Apple Developer account and the app in App
+  # Store Connect (asuka Shipping guide, "In CI").
+  app-ios:
+    needs: release
+    if: vars.MOBILE_RELEASE == 'true'
+    runs-on: macos-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: distribution certificate and profile
+        env:
+          CERTIFICATE: ${{ secrets.IOS_CERTIFICATE }}
+          CERTIFICATE_PASSWORD: ${{ secrets.IOS_CERTIFICATE_PASSWORD }}
+          PROFILE: ${{ secrets.IOS_PROFILE }}
+        run: |
+          KC=$RUNNER_TEMP/signing.keychain-db
+          PW=$(openssl rand -hex 16)
+          security create-keychain -p "$PW" "$KC"
+          security set-keychain-settings -lut 3600 "$KC"
+          security unlock-keychain -p "$PW" "$KC"
+          echo "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$KC" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -k "$PW" "$KC"
+          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          echo "$PROFILE" | base64 --decode > "$RUNNER_TEMP/app.mobileprovision"
+      - name: build, and upload to TestFlight
+        run: go run ./dev asuka publish --platform ios --version "${GITHUB_REF_NAME#v}" --profile "$RUNNER_TEMP/app.mobileprovision" --no-wait -o "$PWD/dist/ios"
+        env:
+          ASUKA_ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASUKA_ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASUKA_ASC_KEY: ${{ secrets.ASC_KEY }}
+      - run: gh release upload "$GITHUB_REF_NAME" dist/ios/*.ipa --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Android → Google Play's internal test track. Play takes the first .aab
+  # only by hand in the Play Console; this uploads the ones after.
+  app-android:
+    needs: release
+    if: vars.MOBILE_RELEASE == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-java@v6
+        with: { distribution: temurin, java-version: 17 }
+      - uses: android-actions/setup-android@v4
+        with: { packages: platform-tools }
+      - run: sdkmanager "ndk;27.1.12297006"
+      - name: the upload key
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+        run: echo "$KEYSTORE" | base64 --decode > "$RUNNER_TEMP/upload.jks"
+      - name: build, and upload to Play's internal track
+        run: go run ./dev asuka publish --platform android --track internal --version "${GITHUB_REF_NAME#v}" -o "$PWD/dist/android"
+        env:
+          ASUKA_KEYSTORE: ${{ runner.temp }}/upload.jks
+          ASUKA_KEY_ALIAS: upload
+          ASUKA_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ASUKA_PLAY_SERVICE_ACCOUNT: ${{ secrets.PLAY_SERVICE_ACCOUNT }}
+      - run: gh release upload "$GITHUB_REF_NAME" dist/android/*.aab --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Make the draft public once every build that ran has been attached.
+  publish:
+    needs: [release, app-desktop-web, app-mac, app-ios, app-android]
+    if: ${{ !failure() && !cancelled() }} # skipped mobile jobs don't block it
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - run: gh release edit "$GITHUB_REF_NAME" --draft=false --repo "$GITHUB_REPOSITORY"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

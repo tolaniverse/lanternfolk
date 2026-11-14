@@ -3,7 +3,6 @@ module github.com/tolaniverse/lanternfolk/tools
 go 1.27.4
 
 tool (
-	github.com/egoist/asuka/cmd/asuka
 	github.com/goreleaser/goreleaser/v2
 	golang.org/x/vuln/cmd/govulncheck
 	honnef.co/go/tools/cmd/staticcheck
@@ -127,8 +126,6 @@ require (
 	github.com/docker/go-connections v0.7.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/ebitengine/purego v0.11.2 // indirect
-	github.com/egoist/asuka v0.1.0 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/envoyproxy/go-control-plane/envoy v1.39.0 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.3.3 // indirect

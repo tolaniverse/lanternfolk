@@ -45,9 +45,9 @@ func init() {
 		"ci":           {"fmt, vet, lint, test, build, vuln", ciTask},
 		"snapshot":     {"goreleaser snapshot build into dist/ (no publishing)", snapshotTask},
 		"release":      {"goreleaser release (CI only; needs GITHUB_TOKEN and a tag)", releaseTask},
-		"desktop":      {"asuka build for -p mac|windows|linux into cmd/lanternfolk-desktop/dist", desktopTask},
-		"desktop-dist": {"package the desktop app for every OS/arch into dist/desktop (VERSION=v1.2.3)", desktopDistTask},
-		"tools":        {"build the pinned tools into bin/tools", func([]string) error { return ensureTools() }},
+		"asuka":        {"the asuka CLI (at go.mod's version) on the app: asuka build -p ios --simulator", asukaTask},
+		"desktop-dist": {"package the desktop app into dist/desktop (VERSION=v1.2.3, -platforms mac,windows,linux)", desktopDistTask},
+		"tools":        {"build the pinned tools into bin/tools", func([]string) error { return errors.Join(ensureTools(), ensureAsuka()) }},
 	}
 }
 
@@ -84,7 +84,7 @@ func usage() {
 	sort.Strings(names)
 	fmt.Println("usage: go run ./dev <task> [args]")
 	for _, n := range names {
-		fmt.Printf("  %-9s %s\n", n, tasks[n].help)
+		fmt.Printf("  %-13s %s\n", n, tasks[n].help)
 	}
 }
 
@@ -229,86 +229,145 @@ func releaseTask([]string) error {
 	return tool("goreleaser", "release", "--clean")
 }
 
-func desktopTask(args []string) error {
-	if err := ensureTools(); err != nil {
+// The Asuka app: desktop (mac, windows, linux), mobile (ios, android), web.
+const appDir = "cmd/lanternfolk-app"
+
+// asukaTask runs the asuka CLI on the app: `go run ./dev asuka build -p ios
+// --simulator` runs `asuka build -p ios --simulator cmd/lanternfolk-app`.
+// Desktop and web builds need only Go. iOS needs Xcode, and Android needs a
+// JDK, the Android SDK, and the NDK (asuka's Shipping guide).
+func asukaTask(args []string) error {
+	if len(args) == 0 {
+		return errors.New("usage: go run ./dev asuka <build|publish|dev|vet|...> [flags]")
+	}
+	if err := ensureAsuka(); err != nil {
 		return err
 	}
-	a := append([]string{"build"}, args...)
-	a = append(a, "cmd/lanternfolk-desktop")
-	return run([]string{"CGO_ENABLED=0"}, toolPath("asuka"), a...)
+	// `dev` and `build` take the app's directory as their last argument.
+	switch args[0] {
+	case "build", "publish", "dev":
+		args = append(args, appDir)
+	}
+	return run(nil, toolPath("asuka"), args...)
 }
 
-const desktopDir = "cmd/lanternfolk-desktop"
-
-// desktopDistTask builds the desktop app for each OS/arch with asuka and
-// zips it into dist/desktop/lanternfolk-desktop_<version>_<os>_<arch>.zip.
-// The macOS build needs a Mac; Windows and Linux cross-build from anywhere.
-func desktopDistTask([]string) error {
-	if err := ensureTools(); err != nil {
-		return err
+// desktopDistTask builds the desktop app with asuka and archives it as
+// dist/desktop/lanternfolk-app_<version>_<os>_<arch>.{zip,tar.gz}.
+// asuka builds macOS apps only on a Mac; Windows and Linux build anywhere,
+// so CI makes those on a Linux runner and only the Mac on a macOS runner.
+//
+//	VERSION=v1.2.3 go run ./dev desktop-dist -platforms windows,linux
+//
+// MAC_SIGN_IDENTITY ("Developer ID Application: …"), with ASUKA_APPLE_ID,
+// ASUKA_APPLE_PASSWORD, and ASUKA_TEAM_ID set, signs and notarizes the Mac
+// app. ASUKA_WINDOWS_CERT and ASUKA_WINDOWS_CERT_PASSWORD sign the .exe
+// (asuka reads those itself).
+func desktopDistTask(args []string) error {
+	platforms := map[string]bool{"windows": true, "linux": true, "mac": runtime.GOOS == "darwin"}
+	for i := 0; i < len(args); i++ {
+		if args[i] == "-platforms" && i+1 < len(args) {
+			platforms = map[string]bool{}
+			for _, p := range strings.Split(args[i+1], ",") {
+				platforms[strings.TrimSpace(p)] = true
+			}
+			i++
+		}
 	}
-	version := strings.TrimPrefix(os.Getenv("VERSION"), "v")
-	if version == "" {
-		version = "0.0.0-dev"
+	if platforms["mac"] && runtime.GOOS != "darwin" {
+		return errors.New("asuka builds macOS apps only on a Mac")
 	}
-	out := filepath.Join("dist", "desktop")
-	if err := os.MkdirAll(out, 0o755); err != nil {
+	if err := ensureAsuka(); err != nil {
 		return err
 	}
 	// asuka sets its own -ldflags, so the version goes in through --version:
 	// it is built into the app (Info.plist, the .exe resource, AppStream) and
 	// read at runtime with sdk/update.Version().
-	env := []string{"CGO_ENABLED=0"}
+	version := strings.TrimPrefix(os.Getenv("VERSION"), "v")
+	if version == "" {
+		version = "0.0.0-dev"
+	}
+	out, _ := filepath.Abs(filepath.Join("dist", "desktop"))
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		return err
+	}
 
-	type job struct {
-		platform, arch string
-		artifact       func() (string, error) // what to zip, after the build
+	type job struct{ platform, arch string }
+	var jobs []job
+	for _, p := range []string{"windows", "linux"} {
+		if platforms[p] {
+			jobs = append(jobs, job{p, "amd64"}, job{p, "arm64"})
+		}
 	}
-	dist := filepath.Join(desktopDir, "dist")
-	jobs := []job{
-		{"windows", "amd64", constPath(filepath.Join(dist, "Lanternfolk"))},
-		{"windows", "arm64", constPath(filepath.Join(dist, "Lanternfolk"))},
-		{"linux", "amd64", globOne(filepath.Join(dist, "linux", "*-linux-amd64.tar.gz"))},
-		{"linux", "arm64", globOne(filepath.Join(dist, "linux", "*-linux-arm64.tar.gz"))},
-	}
-	if runtime.GOOS == "darwin" {
-		jobs = append(jobs, job{"mac", "universal", constPath(filepath.Join(dist, "Lanternfolk.app"))})
-	} else {
-		fmt.Println("  skipping mac: asuka builds macOS apps only on a Mac")
+	if platforms["mac"] {
+		jobs = append(jobs, job{"mac", "universal"})
 	}
 	for _, j := range jobs {
 		step(fmt.Sprintf("desktop %s/%s", j.platform, j.arch))
-		if err := os.RemoveAll(dist); err != nil {
+		build := filepath.Join(filepath.Dir(out), "desktop-build", j.platform+"-"+j.arch)
+		if err := os.RemoveAll(build); err != nil {
 			return err
 		}
-		args := []string{"build", "-p", j.platform, "--version", version}
-		if j.platform != "mac" {
-			args = append(args, "--arch", j.arch)
-		}
-		if err := run(env, toolPath("asuka"), append(args, desktopDir)...); err != nil {
-			return err
-		}
-		src, err := j.artifact()
-		if err != nil {
-			return err
-		}
-		osName := map[string]string{"mac": "darwin"}[j.platform]
-		if osName == "" {
-			osName = j.platform
-		}
-		name := fmt.Sprintf("lanternfolk-desktop_%s_%s_%s", version, osName, j.arch)
-		if strings.HasSuffix(src, ".tar.gz") { // asuka already archived Linux
-			if err := copyFile(src, filepath.Join(out, name+".tar.gz")); err != nil {
-				return err
+		a := []string{"build", "-p", j.platform, "--version", version, "-o", build}
+		if j.platform == "mac" {
+			if id := os.Getenv("MAC_SIGN_IDENTITY"); id != "" {
+				a = append(a, "--sign", id, "--notarize", "env")
 			}
-			continue
+		} else {
+			a = append(a, "--arch", j.arch)
 		}
-		if err := zipDir(src, filepath.Join(out, name+".zip")); err != nil {
+		if err := run(nil, toolPath("asuka"), append(a, appDir)...); err != nil {
+			return err
+		}
+		osName := j.platform
+		if osName == "mac" {
+			osName = "darwin"
+		}
+		name := filepath.Join(out, fmt.Sprintf("lanternfolk-app_%s_%s_%s", version, osName, j.arch))
+		var err error
+		switch j.platform {
+		case "linux": // asuka already made the .tar.gz
+			var src string
+			if src, err = globOne(filepath.Join(build, "linux", "*.tar.gz"))(); err == nil {
+				err = copyFile(src, name+".tar.gz")
+			}
+		case "windows":
+			err = zipDir(filepath.Join(build, "Lanternfolk"), name+".zip")
+		case "mac":
+			err = zipDir(filepath.Join(build, "Lanternfolk.app"), name+".zip")
+		}
+		if err != nil {
 			return err
 		}
 	}
 	fmt.Println("\n✓ desktop packages in", out)
 	return nil
+}
+
+// ensureAsuka installs the asuka CLI at the version of the asuka module in
+// go.mod. The CLI carries the iOS and Android hosts, so it must match the
+// library the app links (asuka's Shipping guide, "In CI").
+func ensureAsuka() error {
+	out, err := exec.Command("go", "list", "-m", "-f", "{{.Version}}", "github.com/egoist/asuka").Output()
+	if err != nil {
+		return fmt.Errorf("go list -m github.com/egoist/asuka: %w", err)
+	}
+	version := strings.TrimSpace(string(out))
+	stamp := filepath.Join("bin", "tools", ".asuka-version")
+	if b, err := os.ReadFile(stamp); err == nil && string(b) == version {
+		if _, err := os.Stat(toolPath("asuka")); err == nil {
+			return nil
+		}
+	}
+	fmt.Printf("  installing asuka %s into bin/tools (matches go.mod)…\n", version)
+	gobin, _ := filepath.Abs(filepath.Join("bin", "tools"))
+	if err := os.MkdirAll(gobin, 0o755); err != nil {
+		return err
+	}
+	if err := run([]string{"GOBIN=" + gobin, "CGO_ENABLED=0"},
+		"go", "install", "github.com/egoist/asuka/cmd/asuka@"+version); err != nil {
+		return err
+	}
+	return os.WriteFile(stamp, []byte(version), 0o644)
 }
 
 func constPath(p string) func() (string, error) { return func() (string, error) { return p, nil } }
@@ -405,7 +464,6 @@ var toolPkgs = map[string]string{
 	"staticcheck": "honnef.co/go/tools/cmd/staticcheck",
 	"govulncheck": "golang.org/x/vuln/cmd/govulncheck",
 	"goreleaser":  "github.com/goreleaser/goreleaser/v2",
-	"asuka":       "github.com/egoist/asuka/cmd/asuka",
 }
 
 func toolPath(name string) string {

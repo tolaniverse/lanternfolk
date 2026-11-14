@@ -71,4 +71,8 @@ changelog:
     exclude: ["^docs:", "^test:", "^chore\\(deps\\):"]
 
 release:
+  # A draft: the app jobs attach their builds, then release.yml's publish job
+  # makes it public (Asuka's pattern; installed apps read the latest published).
+  draft: true
+  replace_existing_draft: true
   prerelease: auto

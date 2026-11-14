@@ -1,9 +1,11 @@
-// Command lanternfolk-desktop is the Lanternfolk desktop client (Asuka:
-// native widgets, no cgo on desktop). It follows the terminal client and
-// waits on the world/input spike (Decisions 2026-11-14).
+// Command lanternfolk-app is the Lanternfolk GUI app, built with Asuka: native
+// widgets on macOS, Windows, and Linux (no cgo), and the same code on iOS,
+// Android, and the web. It follows the terminal client and waits on the
+// world/input spike (Decisions 2026-11-14).
 //
-//	go run ./dev desktop -p mac            # one platform, into cmd/lanternfolk-desktop/dist
-//	VERSION=v1.2.3 go run ./dev desktop-dist  # every platform, zipped, into dist/desktop
+//	go run ./dev asuka dev                         # run on this computer, reloading on save
+//	go run ./dev asuka build -p ios --simulator    # needs Xcode
+//	VERSION=v1.2.3 go run ./dev desktop-dist       # desktop packages into dist/desktop
 package main
 
 import (

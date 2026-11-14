@@ -5,6 +5,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch: # run by hand to build the apps from a branch
 
 permissions:
   contents: read
@@ -26,10 +27,10 @@ jobs:
       - uses: actions/cache@v6
         with:
           path: bin/tools
-          key: tools-${{ runner.os }}-${{ hashFiles('tools/go.sum') }}
+          key: tools-${{ runner.os }}-${{ hashFiles('tools/go.sum', 'go.sum') }}
       - run: go run ./dev ci
 
-  # Tests on the other desktop OSes (the TUI and desktop clients run there).
+  # Tests on the other desktop OSes, where the TUI and the app run.
   test:
     strategy:
       fail-fast: false
@@ -57,29 +58,76 @@ jobs:
       - uses: actions/cache@v6
         with:
           path: bin/tools
-          key: tools-${{ runner.os }}-${{ hashFiles('tools/go.sum') }}
+          key: tools-${{ runner.os }}-${{ hashFiles('tools/go.sum', 'go.sum') }}
       - run: go run ./dev snapshot
 
-  # Desktop packages for every OS, built on a Mac (asuka builds macOS apps
-  # only on a Mac; Windows and Linux cross-build). Main branch only:
-  # macOS runners are the expensive ones.
-  desktop:
-    if: github.event_name == 'push'
+  # ---- The Asuka app, on main and by hand (the macOS runner is the costly one) ----
+
+  # Windows and Linux desktop builds, and the web build: plain Go, from Linux.
+  app-desktop-web:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: go run ./dev desktop-dist -platforms windows,linux
+        env:
+          VERSION: 0.0.0-main.${{ github.run_number }}
+      - run: go run ./dev asuka build -p web -o "$PWD/dist/web"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: app-desktop-windows-linux
+          path: dist/desktop/*
+          retention-days: 14
+      - uses: actions/upload-artifact@v7
+        with:
+          name: app-web
+          path: dist/web
+          retention-days: 14
+
+  # The Mac app and an iOS simulator build (Xcode is on the runner; no signing).
+  app-apple:
+    if: github.event_name != 'pull_request'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - uses: actions/cache@v6
-        with:
-          path: bin/tools
-          key: tools-${{ runner.os }}-${{ hashFiles('tools/go.sum') }}
-      - run: go run ./dev desktop-dist
+      - run: go run ./dev desktop-dist -platforms mac
         env:
           VERSION: 0.0.0-main.${{ github.run_number }}
+      - run: go run ./dev asuka build -p ios --simulator -o "$PWD/dist/ios"
       - uses: actions/upload-artifact@v7
         with:
-          name: lanternfolk-desktop
+          name: app-mac
           path: dist/desktop/*
           retention-days: 14
+
+  # An Android build, signed with a throwaway key made for this run: it proves
+  # the build works, but Play would refuse it (releases use the upload key).
+  app-android:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-java@v6
+        with: { distribution: temurin, java-version: 17 }
+      - uses: android-actions/setup-android@v4
+        with: { packages: platform-tools }
+      - run: sdkmanager "ndk;27.1.12297006"
+      - name: a throwaway upload key
+        run: |
+          keytool -genkeypair -noprompt -keystore "$RUNNER_TEMP/ci.jks" -alias ci \
+            -keyalg RSA -keysize 2048 -validity 1 -storepass cipassword \
+            -dname "CN=Lanternfolk CI"
+      - run: go run ./dev asuka build -p android -o "$PWD/dist/android"
+        env:
+          ASUKA_KEYSTORE: ${{ runner.temp }}/ci.jks
+          ASUKA_KEY_ALIAS: ci
+          ASUKA_KEYSTORE_PASSWORD: cipassword
