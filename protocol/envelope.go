@@ -27,6 +27,7 @@ const (
 	KindPresence Kind = "presence"        // presence lane: coalesced, never stored
 	KindStream   Kind = "stream"          // agent token deltas, lossy on reconnect
 	KindResync   Kind = "resync_required" // client must fetch a fresh snapshot
+	KindSnapshot Kind = "snapshot"        // full state at Seq; payload is Snapshot
 )
 
 // Envelope is one frame on the wire.
@@ -96,7 +97,7 @@ func (e Envelope) validate() error {
 		if e.Seq == 0 || e.Type == "" {
 			return fmt.Errorf("%w: event needs seq and type", ErrInvalidEnvelope)
 		}
-	case KindPresence, KindStream, KindResync:
+	case KindPresence, KindStream, KindResync, KindSnapshot:
 	default:
 		return fmt.Errorf("%w: unknown kind %q", ErrInvalidEnvelope, e.Kind)
 	}
