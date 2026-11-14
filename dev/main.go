@@ -47,6 +47,7 @@ func init() {
 		"release":      {"goreleaser release (CI only; needs GITHUB_TOKEN and a tag)", releaseTask},
 		"asuka":        {"the asuka CLI (at go.mod's version) on the app: asuka build -p ios --simulator", asukaTask},
 		"desktop-dist": {"package the desktop app into dist/desktop (VERSION=v1.2.3, -platforms mac,windows,linux)", desktopDistTask},
+		"deploy":       {"point Dokploy at the release image, deploy, wait for /v1/version (CI; see dev/deploy.go)", deployTask},
 		"tools":        {"build the pinned tools into bin/tools", func([]string) error { return errors.Join(ensureTools(), ensureAsuka()) }},
 	}
 }
