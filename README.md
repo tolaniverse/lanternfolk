@@ -70,7 +70,8 @@ draining), `GET /v1/version`.
   Dockerfile, distroless base) to `ghcr.io/tolaniverse/lanternfolk`. The app
   jobs attach the desktop and web packages, plus TestFlight and Play uploads
   when `MOBILE_RELEASE=true`. The release is published only once all of them
-  succeed.
+  succeed. Then, with `DEPLOY=true`, `go run ./dev deploy` points the Dokploy
+  app at the new image, deploys it, and waits until `/v1/version` reports it.
 
 ```sh
 git tag v0.1.0 && git push origin v0.1.0
@@ -99,6 +100,7 @@ Settings › Secrets and variables › Actions:
 | iOS → TestFlight | `IOS_CERTIFICATE`, `IOS_CERTIFICATE_PASSWORD`, `IOS_PROFILE`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY` |
 | Android → Play internal track | `ANDROID_KEYSTORE`, `ANDROID_KEYSTORE_PASSWORD`, `PLAY_SERVICE_ACCOUNT` |
 | Turn on store uploads | variable `MOBILE_RELEASE=true` |
+| Deploy to Dokploy (CD) | environment `production`: secret `DOKPLOY_API_KEY`; variables `DEPLOY=true`, `DOKPLOY_URL`, `DOKPLOY_APPLICATION_ID`, `PUBLIC_URL` |
 
 See Asuka's [Shipping guide](https://asuka.egoist.dev/docs/shipping) for how to
 make each one.
