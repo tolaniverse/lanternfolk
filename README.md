@@ -23,7 +23,7 @@ workspaces, chat, presence) comes next, terminal client first.
 
 ## Develop
 
-All you need is Go. `go.mod` pins the toolchain (`toolchain go1.26.11`),
+All you need is Go. `go.mod` pins the toolchain (`go 1.27.0`, `toolchain go1.27.4`),
 and the `go` command downloads it if yours is older.
 
 ```sh
