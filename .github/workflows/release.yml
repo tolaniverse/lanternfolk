@@ -212,14 +212,15 @@ jobs:
 
   # CD: roll the release's image out on Dokploy, then wait until the service
   # reports the new version. Runs when the repository variable DEPLOY is
-  # "true". The `production` environment holds the Dokploy secrets and can
-  # require an approval (Settings › Environments).
+  # "true". The `dev` environment holds the Dokploy secret and variables and
+  # can require an approval (Settings › Environments). A separate `production`
+  # environment and job come with the production deployment.
   deploy:
     needs: publish
     if: ${{ !failure() && !cancelled() && vars.DEPLOY == 'true' }}
     runs-on: ubuntu-latest
     environment:
-      name: production
+      name: dev
       url: ${{ vars.PUBLIC_URL }}
     steps:
       - uses: actions/checkout@v7
