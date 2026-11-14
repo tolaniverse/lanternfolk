@@ -60,13 +60,17 @@ draining), `GET /v1/version`.
 ## CI/CD
 
 - **CI** (`.github/workflows/ci.yml`), on PRs and on `main`: `go run ./dev ci`
-  on Linux; vet and tests on macOS and Windows; a goreleaser dry run; on
-  `main`, desktop packages for every OS as build artifacts.
-- **Release** (`.github/workflows/release.yml`), on a `v*` tag: CLI archives
-  and checksums, a multi-arch `lanternfolkd` image built by
-  [ko](https://ko.build) (no Dockerfile, distroless base) at
-  `ghcr.io/tolaniverse/lanternfolk`, and desktop packages attached to the
-  GitHub release.
+  on Linux; vet and tests on macOS and Windows; a goreleaser dry run. On
+  `main` (or run by hand), the app for Windows, Linux, and web (one Linux
+  runner), Mac plus an iOS simulator build (macOS runner), and Android with
+  a throwaway key, as build artifacts.
+- **Release** (`.github/workflows/release.yml`), on a `v*` tag: goreleaser
+  makes a **draft** release with CLI archives and checksums, and pushes a
+  multi-arch `lanternfolkd` image built by [ko](https://ko.build) (no
+  Dockerfile, distroless base) to `ghcr.io/tolaniverse/lanternfolk`. The app
+  jobs attach the desktop and web packages, plus TestFlight and Play uploads
+  when `MOBILE_RELEASE=true`. The release is published only once all of them
+  succeed.
 
 ```sh
 git tag v0.1.0 && git push origin v0.1.0
