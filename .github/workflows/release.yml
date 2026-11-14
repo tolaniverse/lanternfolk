@@ -108,7 +108,10 @@ jobs:
           echo "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
           security import "$RUNNER_TEMP/certificate.p12" -k "$KC" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: -k "$PW" "$KC"
-          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          # Put the signing keychain first, keeping the existing ones (one path per line).
+          keychains=()
+          while IFS= read -r k; do k="${k//\"/}"; k="${k#"${k%%[![:space:]]*}"}"; keychains+=("$k"); done < <(security list-keychains -d user)
+          security list-keychains -d user -s "$KC" "${keychains[@]}"
           echo "MAC_SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
       - run: go run ./dev desktop-dist -platforms mac
         env:
@@ -147,7 +150,10 @@ jobs:
           echo "$CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
           security import "$RUNNER_TEMP/certificate.p12" -k "$KC" -P "$CERTIFICATE_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: -k "$PW" "$KC"
-          security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
+          # Put the signing keychain first, keeping the existing ones (one path per line).
+          keychains=()
+          while IFS= read -r k; do k="${k//\"/}"; k="${k#"${k%%[![:space:]]*}"}"; keychains+=("$k"); done < <(security list-keychains -d user)
+          security list-keychains -d user -s "$KC" "${keychains[@]}"
           echo "$PROFILE" | base64 --decode > "$RUNNER_TEMP/app.mobileprovision"
       - name: build, and upload to TestFlight
         run: go run ./dev asuka publish --platform ios --version "${GITHUB_REF_NAME#v}" --profile "$RUNNER_TEMP/app.mobileprovision" --no-wait -o "$PWD/dist/ios"
