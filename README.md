@@ -31,7 +31,8 @@ go run ./dev                 # list tasks
 go run ./dev ci              # fmt, vet, staticcheck, tests (-race), 6 cross-builds, govulncheck
 go run ./cmd/lanternfolkd -log-format text
 go run ./cmd/lanternfolkd -dev-auth -database ./lanternfolk.db  # local workspace loop only
-go run ./cmd/lanternfolk-tui
+go run ./cmd/lanternfolk-tui                    # connect to local server
+go run ./cmd/lanternfolk-tui -demo              # no server needed
 go run ./dev asuka dev        # the app on this computer, reloading on save
 ```
 
@@ -63,6 +64,9 @@ The workspace loop requires authenticated users; the dev-only handle login is
 disabled unless `-dev-auth` is set. Before deploying a build with persistence,
 mount durable storage for the SQLite database and its WAL files. Do not enable
 `-dev-auth` on a public server.
+The TUI's slice-1 screens cover sign-in, workspace creation/join gates, chat,
+and presence. The `-demo` mode uses an in-memory fake server; data resets on
+exit. Public deployments still need a real authentication provider.
 
 ## CI/CD
 
