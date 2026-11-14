@@ -28,7 +28,10 @@ type Store struct{ db *sql.DB }
 // Open opens (creating if needed) and migrates the database at path.
 func Open(ctx context.Context, path string) (*Store, error) {
 	q := url.Values{}
-	for _, p := range []string{"journal_mode(WAL)", "foreign_keys(1)", "busy_timeout(5000)", "synchronous(NORMAL)"} {
+	// FULL sync is intentional: an acknowledged chat write must survive a
+	// power loss, not just a process restart. WAL/NORMAL is faster but may
+	// lose the last committed transaction on a hard crash.
+	for _, p := range []string{"journal_mode(WAL)", "foreign_keys(1)", "busy_timeout(5000)", "synchronous(FULL)"} {
 		q.Add("_pragma", p)
 	}
 	q.Set("_txlock", "immediate")
