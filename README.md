@@ -79,6 +79,16 @@ git tag v0.1.0 && git push origin v0.1.0
 
 Try the release locally without publishing: `go run ./dev snapshot` (writes `dist/`).
 
+### Dev deployment
+
+`go run ./dev deploy-dev` builds `lanternfolkd` with ko and pushes it over an
+SSH tunnel to a localhost-only registry on the dev server. It then points the
+Dokploy dev app at that tag and waits until `/v1/version` serves it. Settings
+are in `deploy/dev.env`; the Dokploy API key comes from `DOKPLOY_API_KEY` or
+`~/.config/lanternfolk/dokploy.key`.
+
+Dev: https://lanternfolk.tolaniverse.xyz (Caddy TLS → Dokploy Traefik → the app).
+
 ## The app on every platform
 
 ```sh
