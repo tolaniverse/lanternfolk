@@ -30,6 +30,7 @@ and the `go` command downloads it if yours is older.
 go run ./dev                 # list tasks
 go run ./dev ci              # fmt, vet, staticcheck, tests (-race), 6 cross-builds, govulncheck
 go run ./cmd/lanternfolkd -log-format text
+go run ./cmd/lanternfolkd -dev-auth -database ./lanternfolk.db  # local workspace loop only
 go run ./cmd/lanternfolk-tui
 go run ./dev asuka dev        # the app on this computer, reloading on save
 ```
@@ -53,9 +54,15 @@ Tools are pinned and built into `bin/tools/` on first use:
 | `-log-level` | `LANTERNFOLK_LOG_LEVEL` | `info` |
 | `-log-format` | `LANTERNFOLK_LOG_FORMAT` | `json` |
 | `-shutdown-timeout` | | `20s` |
+| `-database` | `LANTERNFOLK_DATABASE` | `lanternfolk.db` (SQLite, WAL) |
+| `-dev-auth` | | `false`; handle-only login, **local development only** |
 
 Endpoints: `GET /healthz` (alive), `GET /readyz` (503 while starting or
-draining), `GET /v1/version`.
+draining), `GET /v1/version`, workspace create/join/gates and `GET /v1/ws`.
+The workspace loop requires authenticated users; the dev-only handle login is
+disabled unless `-dev-auth` is set. Before deploying a build with persistence,
+mount durable storage for the SQLite database and its WAL files. Do not enable
+`-dev-auth` on a public server.
 
 ## CI/CD
 
@@ -81,11 +88,12 @@ Try the release locally without publishing: `go run ./dev snapshot` (writes `dis
 
 ### Dev deployment
 
-`go run ./dev deploy-dev` builds `lanternfolkd` with ko and pushes it over an
-SSH tunnel to a localhost-only registry on the dev server. It then points the
-Dokploy dev app at that tag and waits until `/v1/version` serves it. Settings
-are in `deploy/dev.env`; the Dokploy API key comes from `DOKPLOY_API_KEY` or
-`~/.config/lanternfolk/dokploy.key`.
+Dev uses the tagged public GHCR image and the release workflow's Dokploy `dev`
+environment. The former `deploy-dev` command targets a temporary local
+registry, which was removed after `v0.1.0` went live; it is retained for an
+explicitly restored registry but is **not** the current deployment path.
+The Dokploy API key is held in the GitHub `dev` environment secret, not in the
+repository.
 
 Dev: https://lanternfolk.tolaniverse.xyz (Caddy TLS → Dokploy Traefik → the app).
 
@@ -110,7 +118,7 @@ Settings › Secrets and variables › Actions:
 | iOS → TestFlight | `IOS_CERTIFICATE`, `IOS_CERTIFICATE_PASSWORD`, `IOS_PROFILE`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY` |
 | Android → Play internal track | `ANDROID_KEYSTORE`, `ANDROID_KEYSTORE_PASSWORD`, `PLAY_SERVICE_ACCOUNT` |
 | Turn on store uploads | variable `MOBILE_RELEASE=true` |
-| Deploy to Dokploy (CD) | environment `dev`: secret `DOKPLOY_API_KEY`; variables `DEPLOY=true`, `DOKPLOY_URL`, `DOKPLOY_APPLICATION_ID`, `PUBLIC_URL` |
+| Deploy to Dokploy (CD) | environment `dev`: secret `DOKPLOY_API_KEY`; variables `DOKPLOY_URL`, `DOKPLOY_APPLICATION_ID`, `PUBLIC_URL`; repository variable `DEPLOY=true` |
 
 See Asuka's [Shipping guide](https://asuka.egoist.dev/docs/shipping) for how to
 make each one.

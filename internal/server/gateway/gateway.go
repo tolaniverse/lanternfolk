@@ -1,6 +1,4 @@
-// Package gateway is lanternfolkd's HTTP edge. For now it serves health and
-// version endpoints. The WebSocket endpoint (/v1/ws) and the REST API from
-// System Design §4 land here in slice 1.
+// Package gateway is lanternfolkd's HTTP and WebSocket edge.
 package gateway
 
 import (
@@ -11,14 +9,19 @@ import (
 	"time"
 
 	"github.com/tolaniverse/lanternfolk/internal/buildinfo"
+	"github.com/tolaniverse/lanternfolk/internal/server/app"
+	"github.com/tolaniverse/lanternfolk/internal/server/realtime"
 	"github.com/tolaniverse/lanternfolk/protocol"
 )
 
 // Gateway holds the HTTP handlers and readiness state.
 type Gateway struct {
-	log   *slog.Logger
-	ready atomic.Bool
-	mux   *http.ServeMux
+	log     *slog.Logger
+	ready   atomic.Bool
+	mux     *http.ServeMux
+	app     *app.App
+	hub     *realtime.Hub
+	devAuth bool
 }
 
 // New builds a gateway. It reports not-ready until SetReady(true).
@@ -27,6 +30,18 @@ func New(log *slog.Logger) *Gateway {
 	g.mux.HandleFunc("GET /healthz", g.healthz)
 	g.mux.HandleFunc("GET /readyz", g.readyz)
 	g.mux.HandleFunc("GET /v1/version", g.version)
+	return g
+}
+
+// WithWorkspaceLoop attaches the slice-1 API. Dev authentication is strictly
+// opt-in and must never be enabled on an Internet-facing deployment.
+func (g *Gateway) WithWorkspaceLoop(a *app.App, h *realtime.Hub, devAuth bool) *Gateway {
+	g.app, g.hub, g.devAuth = a, h, devAuth
+	g.mux.HandleFunc("POST /v1/auth/dev", g.authDev)
+	g.mux.HandleFunc("POST /v1/workspaces", g.createWorkspace)
+	g.mux.HandleFunc("GET /v1/workspaces/{slug}/gates", g.gates)
+	g.mux.HandleFunc("POST /v1/workspaces/{slug}/join", g.join)
+	g.mux.HandleFunc("GET /v1/ws", g.websocket)
 	return g
 }
 
@@ -78,6 +93,8 @@ type statusRecorder struct {
 	http.ResponseWriter
 	status int
 }
+
+func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
 func (r *statusRecorder) WriteHeader(code int) {
 	r.status = code

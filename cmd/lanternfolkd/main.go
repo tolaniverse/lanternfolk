@@ -19,8 +19,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/tolaniverse/lanternfolk/internal/adapters/sqlite"
 	"github.com/tolaniverse/lanternfolk/internal/buildinfo"
+	"github.com/tolaniverse/lanternfolk/internal/server/app"
 	"github.com/tolaniverse/lanternfolk/internal/server/gateway"
+	"github.com/tolaniverse/lanternfolk/internal/server/realtime"
 )
 
 type config struct {
@@ -28,6 +31,8 @@ type config struct {
 	logLevel        slog.Level
 	logFormat       string
 	shutdownTimeout time.Duration
+	database        string
+	devAuth         bool
 }
 
 func main() {
@@ -51,7 +56,27 @@ func run(ctx context.Context, args []string, stderr *os.File) error {
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	gw := gateway.New(log)
+	store, err := sqlite.Open(ctx, cfg.database)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	wake := make(chan struct{}, 1)
+	hub := realtime.New()
+	a := app.New(store, func() {
+		select {
+		case wake <- struct{}{}:
+		default:
+		}
+	})
+	relayCtx, stopRelay := context.WithCancel(ctx)
+	defer stopRelay()
+	go func() {
+		if err := realtime.Relay(relayCtx, store, hub.Publish, wake); err != nil && relayCtx.Err() == nil {
+			log.Error("outbox relay stopped", "error", err)
+		}
+	}()
+	gw := gateway.New(log).WithWorkspaceLoop(a, hub, cfg.devAuth)
 	srv := &http.Server{
 		Addr:              cfg.addr,
 		Handler:           gw,
@@ -95,6 +120,8 @@ func parse(args []string) (config, bool, error) {
 	fs.StringVar(&level, "log-level", env("LANTERNFOLK_LOG_LEVEL", "info"), "debug, info, warn, or error")
 	fs.StringVar(&cfg.logFormat, "log-format", env("LANTERNFOLK_LOG_FORMAT", "json"), "json or text")
 	fs.DurationVar(&cfg.shutdownTimeout, "shutdown-timeout", 20*time.Second, "how long to drain on SIGTERM")
+	fs.StringVar(&cfg.database, "database", env("LANTERNFOLK_DATABASE", "lanternfolk.db"), "SQLite database path")
+	fs.BoolVar(&cfg.devAuth, "dev-auth", false, "enable handle-only dev sign-in (local development only)")
 	showVersion := fs.Bool("version", false, "print the version and exit")
 	if err := fs.Parse(args); err != nil {
 		return cfg, false, err
