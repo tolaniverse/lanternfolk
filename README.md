@@ -13,7 +13,7 @@ workspaces, chat, presence) comes next, terminal client first.
 |---|---|
 | `cmd/lanternfolkd` | server: one binary for hosted and self-hosted |
 | `cmd/lanternfolk-tui` | terminal client ([opentui-go](https://github.com/tolaniverse/opentui-go)) |
-| `cmd/lanternfolk-desktop` | desktop client ([Asuka](https://asuka.egoist.dev): native widgets) |
+| `cmd/lanternfolk-app` | GUI app ([Asuka](https://asuka.egoist.dev)): native on macOS, Windows, Linux; same code on iOS, Android, web |
 | `protocol/` | the public, versioned wire contract (stdlib only) |
 | `internal/core/` | pure domain (stdlib only) |
 | `internal/server/` | command bus, gateway, realtime hubs (declares ports) |
@@ -31,15 +31,19 @@ go run ./dev                 # list tasks
 go run ./dev ci              # fmt, vet, staticcheck, tests (-race), 6 cross-builds, govulncheck
 go run ./cmd/lanternfolkd -log-format text
 go run ./cmd/lanternfolk-tui
-go run ./dev desktop -p mac  # or windows, linux → cmd/lanternfolk-desktop/dist
+go run ./dev asuka dev        # the app on this computer, reloading on save
 ```
 
 Every binary builds with `CGO_ENABLED=0` for linux, darwin, and windows on
-amd64 and arm64. Nothing needs a C toolchain, apart from `-race` in tests.
+amd64 and arm64, and so do the desktop and web builds of the app. Only the
+phone builds need native toolchains: iOS needs Xcode; Android needs a JDK,
+the Android SDK, and the NDK. `-race` in tests needs a C compiler.
 
-The first `go run ./dev lint|vuln|snapshot|desktop` builds the pinned tools
-into `bin/tools/` (a minute or two). After that they are rebuilt only when
-`tools/go.mod` changes.
+Tools are pinned and built into `bin/tools/` on first use:
+
+- staticcheck, govulncheck, goreleaser: `tools/go.mod` (a separate module, so they never touch the product's dependencies)
+- the asuka CLI: at the asuka version in `go.mod`, because the CLI carries the iOS and Android hosts and must match the library
+- actionlint: its own `go install`, because its dependencies conflict with goreleaser's
 
 ### Server configuration
 
@@ -69,3 +73,28 @@ git tag v0.1.0 && git push origin v0.1.0
 ```
 
 Try the release locally without publishing: `go run ./dev snapshot` (writes `dist/`).
+
+## The app on every platform
+
+```sh
+go run ./dev asuka build -p mac                # or windows, linux, web
+go run ./dev asuka build -p ios --simulator    # needs Xcode
+go run ./dev asuka build -p android            # needs JDK + Android SDK + NDK and an upload key
+VERSION=v1.2.3 go run ./dev desktop-dist       # all desktop targets, archived into dist/desktop
+```
+
+### Release secrets (all optional)
+
+Releases build unsigned when these are missing. Set them in
+Settings › Secrets and variables › Actions:
+
+| For | Secrets / variables |
+|---|---|
+| Mac: signed and notarized | `MAC_CERTIFICATE`, `MAC_CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_APP_PASSWORD`, `APPLE_TEAM_ID`; variable `MAC_SIGN_IDENTITY` |
+| Windows: signed `.exe` | `WINDOWS_CERTIFICATE`, `WINDOWS_CERTIFICATE_PASSWORD` |
+| iOS → TestFlight | `IOS_CERTIFICATE`, `IOS_CERTIFICATE_PASSWORD`, `IOS_PROFILE`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_KEY` |
+| Android → Play internal track | `ANDROID_KEYSTORE`, `ANDROID_KEYSTORE_PASSWORD`, `PLAY_SERVICE_ACCOUNT` |
+| Turn on store uploads | variable `MOBILE_RELEASE=true` |
+
+See Asuka's [Shipping guide](https://asuka.egoist.dev/docs/shipping) for how to
+make each one.

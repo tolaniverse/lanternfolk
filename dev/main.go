@@ -39,7 +39,7 @@ func init() {
 		"fmt":          {"fail if any file needs gofmt (-w to rewrite)", fmtTask},
 		"vet":          {"go vet ./...", func([]string) error { return goCmd("vet", "./...") }},
 		"test":         {"go test ./... (-race on platforms that support it)", testTask},
-		"lint":         {"staticcheck for linux, darwin, and windows", lintTask},
+		"lint":         {"staticcheck for linux, darwin, and windows; actionlint for workflows", lintTask},
 		"vuln":         {"govulncheck ./...", func([]string) error { return tool("govulncheck", "./...") }},
 		"build":        {"build every binary for every OS/arch with CGO_ENABLED=0", buildTask},
 		"ci":           {"fmt, vet, lint, test, build, vuln", ciTask},
@@ -171,6 +171,13 @@ func testTask(args []string) error {
 
 func lintTask([]string) error {
 	if err := ensureTools(); err != nil {
+		return err
+	}
+	fmt.Println("  actionlint .github/workflows")
+	if err := ensureIsolated("actionlint", actionlintPkg); err != nil {
+		return err
+	}
+	if err := run(nil, toolPath("actionlint")); err != nil {
 		return err
 	}
 	for _, goos := range []string{"linux", "darwin", "windows"} {
@@ -370,8 +377,6 @@ func ensureAsuka() error {
 	return os.WriteFile(stamp, []byte(version), 0o644)
 }
 
-func constPath(p string) func() (string, error) { return func() (string, error) { return p, nil } }
-
 func globOne(pattern string) func() (string, error) {
 	return func() (string, error) {
 		m, err := filepath.Glob(pattern)
@@ -531,4 +536,29 @@ func toolsHash() (string, error) {
 		}
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// actionlint conflicts with goreleaser's dependencies, so it is installed on
+// its own (go install pkg@version keeps a separate module graph, still
+// verified against the checksum database). Bump the version here.
+const actionlintPkg = "github.com/rhysd/actionlint/cmd/actionlint@v1.7.12"
+
+// ensureIsolated installs pkg@version into bin/tools/name unless that exact
+// version is already there.
+func ensureIsolated(name, pkgAtVersion string) error {
+	stamp := filepath.Join("bin", "tools", "."+name+"-version")
+	if b, err := os.ReadFile(stamp); err == nil && string(b) == pkgAtVersion {
+		if _, err := os.Stat(toolPath(name)); err == nil {
+			return nil
+		}
+	}
+	fmt.Printf("  installing %s into bin/tools…\n", pkgAtVersion)
+	gobin, _ := filepath.Abs(filepath.Join("bin", "tools"))
+	if err := os.MkdirAll(gobin, 0o755); err != nil {
+		return err
+	}
+	if err := run([]string{"GOBIN=" + gobin, "CGO_ENABLED=0"}, "go", "install", pkgAtVersion); err != nil {
+		return err
+	}
+	return os.WriteFile(stamp, []byte(pkgAtVersion), 0o644)
 }
