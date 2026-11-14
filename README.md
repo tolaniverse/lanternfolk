@@ -34,6 +34,7 @@ go run ./cmd/lanternfolkd -dev-auth -database ./lanternfolk.db  # local workspac
 go run ./cmd/lanternfolk-tui                    # connect to local server
 go run ./cmd/lanternfolk-tui -demo              # no server needed
 go run ./dev asuka dev        # the app on this computer, reloading on save
+LANTERNFOLK_WORLD_SPIKE=1 go run ./dev asuka dev  # experimental tile canvas + pan
 ```
 
 Every binary builds with `CGO_ENABLED=0` for linux, darwin, and windows on
@@ -67,6 +68,8 @@ mount durable storage for the SQLite database and its WAL files. Do not enable
 The TUI's slice-1 screens cover sign-in, workspace creation/join gates, chat,
 and presence. The `-demo` mode uses an in-memory fake server; data resets on
 exit. Public deployments still need a real authentication provider.
+The GUI's opt-in world spike draws a small tile grid on Asuka's native Canvas
+and handles pan gestures. It is a feasibility probe, not the desktop slice.
 
 ## CI/CD
 

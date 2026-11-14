@@ -13,8 +13,10 @@ import (
 	"github.com/egoist/asuka/fonts"
 	"github.com/egoist/asuka/sdk/update"
 	"github.com/egoist/asuka/ui"
+	"os"
 
 	"github.com/tolaniverse/lanternfolk/internal/buildinfo"
+	"github.com/tolaniverse/lanternfolk/internal/ui/worldspike"
 )
 
 // version prefers the version asuka built in (asuka build --version, from the
@@ -28,6 +30,9 @@ func version() string {
 }
 
 func App() ui.Node {
+	if os.Getenv("LANTERNFOLK_WORLD_SPIKE") == "1" {
+		return worldspike.World()
+	}
 	return ui.SafeArea(ui.Style{Justify: ui.JustifyCenter, Align: ui.AlignCenter, Gap: 12},
 		ui.StaticText("Lanternfolk", ui.Style{Font: fonts.LargeTitle}),
 		ui.StaticText(version()),
