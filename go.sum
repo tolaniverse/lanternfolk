@@ -20,8 +20,8 @@ github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec h1:W09IVJc94
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec/go.mod h1:qqbHyh8v60DhA7CoWK5oRCqLrMHRGoxYCSS9EjAz6Eo=
 github.com/rivo/uniseg v0.4.7 h1:WUdvkW8uEhrYfLC4ZzdpI2ztxP1I582+49Oc5Mq64VQ=
 github.com/rivo/uniseg v0.4.7/go.mod h1:FN3SvrM+Zdj16jyLfmOkMNblXMcoc8DfTHruCPUcx88=
-github.com/tolaniverse/opentui-go v0.22.0 h1:XTxFzrUHYPjg9nwXZBRz8Vz5/HT+SQUTuUQdD5kphhk=
-github.com/tolaniverse/opentui-go v0.22.0/go.mod h1:wq/T9KKnjLhZlz+nvyUNS+Yk/n1aQbOBoOFphpaeqxE=
+github.com/tolaniverse/opentui-go v0.23.0 h1:0Cgwvb8L4qTypoIoQchWCOfD6i2ZvzJwq+LqfDmF7PE=
+github.com/tolaniverse/opentui-go v0.23.0/go.mod h1:wq/T9KKnjLhZlz+nvyUNS+Yk/n1aQbOBoOFphpaeqxE=
 golang.org/x/crypto v0.59.0 h1:xS2jhqYbzNrpvkWP2YTDf4TJwBy3ykR03i8vFDxEc7c=
 golang.org/x/crypto v0.59.0/go.mod h1:veDyUwATGs3c+vN3VfTbzViMGXeTBk3WyhBOkn+F/4U=
 golang.org/x/mod v0.42.0 h1:ICeL3t2L30ljSPHHxDnR4fqVcBt/zR2zJAb9juavmQg=
