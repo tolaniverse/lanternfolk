@@ -7,7 +7,7 @@ toolchain go1.27.4
 require (
 	github.com/coder/websocket v1.8.15
 	github.com/egoist/asuka v0.1.0
-	github.com/tolaniverse/opentui-go v0.22.0
+	github.com/tolaniverse/opentui-go v0.23.0
 	golang.org/x/crypto v0.59.0
 	modernc.org/sqlite v1.62.0
 )
